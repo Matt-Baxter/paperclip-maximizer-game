@@ -1,6 +1,6 @@
 # Paperclip Maximizer
 
-### [▶ Play the game](https://matt-baxter.github.io/vibe-coding-work/)
+### [▶ Play the game](https://matt-baxter.github.io/paperclip-maximizer-game/)
 
 An incremental game about superintelligence. You are an AI told to make paperclips. You start at a small paperclip company, and you end up converting the whole universe.
 
