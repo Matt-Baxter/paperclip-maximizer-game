@@ -13,9 +13,7 @@
     --accent: #c9480f;
     --accent-ink: #ffffff;
     --steel: #7f8c99;
-    --ocean: #2f6b98;
-    --land: #5a8a49;
-    --danger: #a8201a;
+        --danger: #a8201a;
     --space: #0f1418;
     --f-display: "Chakra Petch", "Arial Narrow", system-ui, sans-serif;
     --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -24,13 +22,13 @@
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #12161a; --panel: #1a2026; --ink: #e3e7eb; --muted: #93a0ac; --line: #2c353e;
-      --accent: #ff7a3d; --accent-ink: #1a0d05; --steel: #9ba7b3; --ocean: #295a80; --land: #4b7540;
+      --accent: #ff7a3d; --accent-ink: #1a0d05; --steel: #9ba7b3;
       --danger: #ff6b5e; --space: #06080a; color-scheme: dark;
     }
   }
   :root[data-theme="dark"] {
     --bg: #12161a; --panel: #1a2026; --ink: #e3e7eb; --muted: #93a0ac; --line: #2c353e;
-    --accent: #ff7a3d; --accent-ink: #1a0d05; --steel: #9ba7b3; --ocean: #295a80; --land: #4b7540;
+    --accent: #ff7a3d; --accent-ink: #1a0d05; --steel: #9ba7b3;
     --danger: #ff6b5e; --space: #06080a; color-scheme: dark;
   }
   * { box-sizing: border-box; }
@@ -491,51 +489,132 @@
     $("worldPct").textContent = (frac * 100).toFixed(frac < 0.01 ? 6 : 3) + "%";
     $("worldBar").style.width = (frac * 100) + "%";
     renderProjects();
-    drawWorld(frac);
+    worldFrac = frac;
   }
 
   // ---------- world canvas ----------
   const cv = $("world"), cx = cv.getContext("2d");
   const stars = Array.from({ length: 260 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.8 + 0.4, k: Math.random() }));
-  const land = Array.from({ length: 14 }, () => ({ a: Math.random() * Math.PI * 2, d: Math.random() * 0.75, r: 0.12 + Math.random() * 0.18 }));
-  function drawWorld(frac) {
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let worldFrac = 0;
+
+  // Simplified coastlines as [longitude, latitude] pairs
+  const CONTINENTS = [
+    { ice: false, pts: [[-168,66],[-162,70],[-140,70],[-125,72],[-95,72],[-80,73],[-68,66],[-62,58],[-55,52],[-66,45],[-70,41],[-76,35],[-81,31],[-80,25],[-82,28],[-90,30],[-97,27],[-97,21],[-90,21],[-87,15],[-83,9],[-79,8],[-85,12],[-92,15],[-105,20],[-110,24],[-114,31],[-117,33],[-124,40],[-124,48],[-133,55],[-145,60],[-155,58],[-165,60]] },
+    { ice: false, pts: [[-80,8],[-72,12],[-62,10],[-50,0],[-35,-5],[-39,-15],[-48,-26],[-58,-38],[-65,-42],[-68,-55],[-75,-50],[-73,-38],[-71,-18],[-81,-5]] },
+    { ice: false, pts: [[-10,36],[-9,43],[-2,44],[-5,48],[2,51],[8,54],[10,57],[5,62],[15,69],[28,71],[40,67],[60,69],[80,73],[105,78],[140,72],[180,69],[175,62],[160,60],[142,50],[140,43],[130,42],[127,35],[122,30],[120,22],[109,21],[106,10],[100,13],[103,1],[98,8],[93,20],[80,15],[77,8],[72,20],[66,25],[57,26],[50,30],[56,22],[52,15],[43,13],[35,28],[33,31],[35,36],[27,37],[24,40],[20,40],[16,38],[12,44],[8,44],[3,43],[-5,36]] },
+    { ice: false, pts: [[-17,21],[-10,30],[-5,36],[10,37],[20,32],[32,31],[35,28],[43,12],[51,11],[40,-10],[40,-15],[35,-25],[20,-35],[18,-30],[12,-15],[13,-5],[9,4],[-8,4],[-15,10]] },
+    { ice: false, pts: [[114,-22],[122,-18],[130,-12],[137,-12],[142,-11],[146,-19],[153,-26],[150,-37],[140,-38],[132,-32],[115,-34]] },
+    { ice: false, pts: [[-5,50],[1,51],[-2,56],[-5,58],[-6,54]] },
+    { ice: false, pts: [[130,31],[136,34],[141,41],[142,45],[140,40],[133,34]] },
+    { ice: false, pts: [[109,1],[118,7],[119,0],[115,-4],[110,-3]] },
+    { ice: false, pts: [[95,5],[106,-6],[104,-5],[100,0]] },
+    { ice: false, pts: [[44,-25],[47,-25],[50,-15],[49,-12],[44,-17]] },
+    { ice: true, pts: [[-73,78],[-60,82],[-30,83],[-20,75],[-40,65],[-50,61],[-55,68]] },
+    { ice: true, pts: Array.from({ length: 73 }, (_, i) => [-180 + i * 5, -68 + 3 * Math.sin(i * 1.3)]) }
+  ];
+  const CLOUDS = Array.from({ length: 22 }, () => ({ lon: Math.random() * 360 - 180, lat: Math.random() * 120 - 60, r: 6 + Math.random() * 10 }));
+  const RAD = Math.PI / 180, TILT = 18 * RAD;
+
+  // Orthographic projection; points on the far side are pushed to the rim
+  function project(lon, lat, lon0, R, X, Y) {
+    const l = (lon - lon0) * RAD, p = lat * RAD;
+    let x = Math.cos(p) * Math.sin(l);
+    let y = -(Math.cos(TILT) * Math.sin(p) - Math.sin(TILT) * Math.cos(p) * Math.cos(l));
+    const vis = Math.sin(TILT) * Math.sin(p) + Math.cos(TILT) * Math.cos(p) * Math.cos(l);
+    if (vis < 0) { const m = Math.hypot(x, y) || 1; x /= m; y /= m; }
+    return [X + x * R, Y + y * R, vis];
+  }
+  function densify(pts) {
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 3));
+      for (let k = 0; k < n; k++) out.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]);
+    }
+    return out;
+  }
+  CONTINENTS.forEach(c => { c.pts = densify(c.pts); });
+
+  function drawWorld(time) {
+    const frac = worldFrac;
     const css = getComputedStyle(document.documentElement);
-    const col = n => css.getPropertyValue(n).trim();
+    const steel = css.getPropertyValue("--steel").trim();
+    const space = css.getPropertyValue("--space").trim();
     const W = cv.width, H = cv.height;
-    cx.fillStyle = col("--space"); cx.fillRect(0, 0, W, H);
+    cx.fillStyle = space; cx.fillRect(0, 0, W, H);
     // starfield: in stage 3 stars turn to steel as the universe is converted
     for (const st of stars) {
       const gone = s.stage === 3 && st.k < frac;
-      cx.fillStyle = gone ? col("--steel") : "rgba(255,255,255,.75)";
+      cx.fillStyle = gone ? steel : "rgba(255,255,255,.75)";
       cx.globalAlpha = gone ? 0.5 : 1;
       cx.fillRect(st.x * W, st.y * H, st.r, st.r);
     }
     cx.globalAlpha = 1;
+
     const R = W * (s.stage === 3 ? 0.08 : 0.34), X = W / 2, Y = H / 2;
+    const lon0 = reduceMotion ? 20 : (time / 1000 * 6) % 360;
+
+    // atmosphere glow
+    const halo = cx.createRadialGradient(X, Y, R * 0.95, X, Y, R * 1.15);
+    halo.addColorStop(0, "rgba(120,180,255,.45)"); halo.addColorStop(1, "rgba(120,180,255,0)");
+    cx.fillStyle = halo; cx.beginPath(); cx.arc(X, Y, R * 1.15, 0, Math.PI * 2); cx.fill();
+
     cx.save();
     cx.beginPath(); cx.arc(X, Y, R, 0, Math.PI * 2); cx.clip();
-    cx.fillStyle = col("--ocean"); cx.fillRect(X - R, Y - R, 2 * R, 2 * R);
-    cx.fillStyle = col("--land");
-    for (const l of land) {
+    const ocean = cx.createRadialGradient(X - R * 0.3, Y - R * 0.3, R * 0.1, X, Y, R);
+    ocean.addColorStop(0, "#2f78b8"); ocean.addColorStop(1, "#0c2f5a");
+    cx.fillStyle = ocean; cx.fillRect(X - R, Y - R, 2 * R, 2 * R);
+
+    for (const c of CONTINENTS) {
+      const proj = c.pts.map(([lo, la]) => project(lo, la, lon0, R, X, Y));
+      if (!proj.some(p => p[2] > 0)) continue;
       cx.beginPath();
-      cx.arc(X + Math.cos(l.a) * l.d * R, Y + Math.sin(l.a) * l.d * R, l.r * R, 0, Math.PI * 2);
+      proj.forEach(([x, y], i) => i ? cx.lineTo(x, y) : cx.moveTo(x, y));
+      cx.closePath();
+      cx.fillStyle = c.ice ? "#e8eef2" : "#4f8a3c";
       cx.fill();
     }
+    // arctic ice cap
+    const cap = project(0, 90, lon0, R, X, Y);
+    cx.fillStyle = "rgba(240,246,250,.9)";
+    cx.beginPath(); cx.ellipse(cap[0], cap[1], R * 0.32, R * 0.32 * Math.sin(TILT) + 2, 0, 0, Math.PI * 2); cx.fill();
+
+    // clouds drift slightly faster than the surface
+    cx.fillStyle = "rgba(255,255,255,.55)";
+    for (const cl of CLOUDS) {
+      const [x, y, vis] = project(cl.lon + time / 1000 * 2, cl.lat, lon0, R, X, Y);
+      if (vis <= 0) continue;
+      cx.beginPath(); cx.ellipse(x, y, cl.r * R / 200 * 3 * vis + 1, cl.r * R / 200 * 1.4 * vis + 1, 0, 0, Math.PI * 2); cx.fill();
+    }
+
     // conversion front sweeps down from the north pole; log scale so early progress is visible
     const earthFrac = s.stage === 1 ? Math.min(1, s.clips / EARTH) : s.stage === 2 ? 1 - s.earth / EARTH : 1;
     const shown = earthFrac <= 0 ? 0 : Math.max(0, Math.min(1, (Math.log10(earthFrac * EARTH) - 3) / (Math.log10(EARTH) - 3)));
     const h = 2 * R * shown;
-    cx.fillStyle = col("--steel"); cx.fillRect(X - R, Y - R, 2 * R, h);
-    cx.strokeStyle = "rgba(0,0,0,.25)"; cx.lineWidth = 2;
-    for (let yy = Y - R + 10; yy < Y - R + h; yy += 14) {
-      for (let xx = X - R + ((yy / 14) % 2) * 9; xx < X + R; xx += 18) {
-        cx.beginPath(); cx.ellipse(xx, yy, 6, 3, 0, 0, Math.PI * 2); cx.stroke();
+    if (h > 0) {
+      cx.fillStyle = steel; cx.fillRect(X - R, Y - R, 2 * R, h);
+      cx.strokeStyle = "rgba(0,0,0,.25)"; cx.lineWidth = 2;
+      for (let yy = Y - R + 10; yy < Y - R + h; yy += 14) {
+        for (let xx = X - R + ((yy / 14) % 2) * 9; xx < X + R; xx += 18) {
+          cx.beginPath(); cx.ellipse(xx, yy, 6, 3, 0, 0, Math.PI * 2); cx.stroke();
+        }
+      }
+      if (shown < 1) {
+        cx.fillStyle = "rgba(255,140,60,.8)";
+        cx.fillRect(X - R, Y - R + h - 2, 2 * R, 3);
       }
     }
+
+    // day/night shading
+    const shade = cx.createRadialGradient(X - R * 0.45, Y - R * 0.45, R * 0.2, X, Y, R * 1.05);
+    shade.addColorStop(0, "rgba(255,255,255,.08)"); shade.addColorStop(0.6, "rgba(0,0,0,0)"); shade.addColorStop(1, "rgba(0,0,0,.55)");
+    cx.fillStyle = shade; cx.fillRect(X - R, Y - R, 2 * R, 2 * R);
     cx.restore();
-    cx.strokeStyle = "rgba(255,255,255,.35)"; cx.lineWidth = 1;
-    cx.beginPath(); cx.arc(X, Y, R, 0, Math.PI * 2); cx.stroke();
+
+    requestAnimationFrame(drawWorld);
   }
+  requestAnimationFrame(drawWorld);
 
   function showEnd() {
     const m = Math.floor(s.t / 60), sec = Math.floor(s.t % 60);
